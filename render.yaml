@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: olelo-honua
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CONTACT_EMAIL
+        value: rob@olelohonua.com
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: Olelo Honua <inquiries@olelohonua.com>
+      - key: SITE_URL
+        value: https://olelohonua.com
