@@ -44,27 +44,24 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 3. Configuring Resend for Live Email Delivery
+## 3. Email Inquiries & Delivery Options
 
-Inquiries submitted through the website are delivered directly to **`rob@olelohonua.com`** with the prospect's details and interactive calculator results.
+### Option A: Direct Email Client (Default — Zero Setup Required)
+When a prospect clicks **"Let's Find Your Savings"**, the application automatically launches their default email application (Apple Mail, Outlook, iOS Mail, Android Gmail, etc.) addressed directly to **`rob@olelohonua.com`** with:
+- **Pre-filled Subject**: `Olelo Honua Inquiry: [Business Name] ([Island])`
+- **Pre-filled Body**: Their full name, business name, phone, industry, island, team size, operational bottlenecks, and attached calculator savings estimates.
+- **Webmail / Clipboard Fallback**: A one-click "Copy Text (For Webmail)" button is provided on screen for users who use browser-based webmail (e.g. Gmail in a browser tab).
 
-### Step 1: Create a Resend Account
-1. Visit [https://resend.com](https://resend.com) and create an account.
-2. In the Resend Dashboard, go to **API Keys** &rarr; **Create API Key** (Permissions: *Full Access* or *Sending Access*).
-3. Copy your key (starts with `re_...`).
-
-### Step 2: Configure Environment Variables
-In your `.env` file (or Render dashboard):
+### Option B: Optional Server-Side Delivery via Resend
+If you prefer submissions to be delivered silently by the server without opening the prospect's email application:
+1. Obtain an API key from [Resend](https://resend.com).
+2. In your `.env` file or Render dashboard, set:
 ```env
 RESEND_API_KEY="re_123456789_your_key_here"
 CONTACT_EMAIL="rob@olelohonua.com"
 EMAIL_FROM="Olelo Honua <inquiries@olelohonua.com>"
 ```
-
-> **Testing without a domain initially:**
-> If you have not verified `olelohonua.com` in Resend yet, you can test with Resend's free testing sender:
-> `EMAIL_FROM="Olelo Honua <onboarding@resend.dev>"`
-> Once your domain DNS is verified, update `EMAIL_FROM` to use your custom domain (e.g., `inquiries@olelohonua.com`).
+*(If no API key is set, the server continues safely logging submissions as backup while the direct email client flow runs).*
 
 ---
 

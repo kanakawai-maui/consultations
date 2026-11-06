@@ -10,12 +10,14 @@ import { Analytics } from '../lib/analytics';
 import { 
   CheckCircle2, 
   AlertCircle, 
-  Send, 
   Calculator, 
   X, 
   Lock, 
   Mail,
-  Loader2
+  Loader2,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
 
 interface InquiryFormProps {
@@ -50,7 +52,9 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSimulatedNote, setIsSimulatedNote] = useState<boolean>(false);
+  const [preparedMailtoUrl, setPreparedMailtoUrl] = useState<string>('');
+  const [preparedBodyText, setPreparedBodyText] = useState<string>('');
+  const [copiedToClipboard, setCopiedToClipboard] = useState(false);
 
   // Sync preselected budget range if changed by pricing configurator
   useEffect(() => {
@@ -65,6 +69,58 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errorMessage) setErrorMessage(null);
+  };
+
+  const constructEmailContent = () => {
+    const subject = `Olelo Honua Inquiry: ${formData.businessName} (${formData.island})`;
+
+    let calcText = '';
+    if (attachedCalculatorData) {
+      calcText = `
+---
+ATTACHED SAVINGS ESTIMATE:
+- Repetitive Admin Staff: ${attachedCalculatorData.inputs.employees} people
+- Average Loaded Hourly Rate: $${attachedCalculatorData.inputs.hourlyCost}/hr
+- Hours Wasted Per Person: ${attachedCalculatorData.inputs.hoursPerWeek} hrs/week
+- Target Automation: ${attachedCalculatorData.inputs.automationPct}%
+- Estimated Annual Savings: $${attachedCalculatorData.outputs.annualSavings.toLocaleString()}/yr
+- Estimated Monthly Savings: $${attachedCalculatorData.outputs.monthlySavings.toLocaleString()}/mo
+- Estimated Payback Timeline: ${attachedCalculatorData.outputs.paybackPeriodText}
+- Estimated 1st Year ROI: ${attachedCalculatorData.outputs.roiPercentText}
+`;
+    }
+
+    const body = `Aloha Rob,
+
+Here is our business operational inquiry for Olelo Honua:
+
+CONTACT DETAILS:
+- Full Name: ${formData.fullName}
+- Business Name: ${formData.businessName}
+- Email: ${formData.email}
+- Phone: ${formData.phone || 'Not provided'}
+- Island / Location: ${formData.island}
+- Industry: ${formData.industry}
+- Team Size: ${formData.employeeCount || 'Not specified'}
+- Expected Investment Range: ${formData.budgetRange}
+
+WHAT TAKES UP TOO MUCH TIME IN OUR BUSINESS:
+${formData.timeWasters}
+
+WHAT WE WOULD MOST LIKE TO IMPROVE:
+${formData.desiredImprovements || 'Not specified'}
+${calcText}
+---
+Looking forward to discussing where we can reduce our operating expenses.
+
+Mahalo,
+${formData.fullName}
+${formData.businessName}
+${formData.email} ${formData.phone ? `| ${formData.phone}` : ''}`;
+
+    const mailto = `mailto:rob@olelohonua.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    return { subject, body, mailto };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -100,6 +156,11 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
     setIsSubmitting(true);
 
     try {
+      const { body, mailto } = constructEmailContent();
+      setPreparedMailtoUrl(mailto);
+      setPreparedBodyText(body);
+
+      // Record in background on server as backup
       const payload: Record<string, any> = {
         fullName: formData.fullName.trim(),
         businessName: formData.businessName.trim(),
@@ -131,25 +192,18 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
         };
       }
 
-      const response = await fetch('/api/inquire', {
+      // Fire backup log to backend
+      fetch('/api/inquire', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      });
+      }).catch(err => console.warn('Backup logging note:', err));
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to submit inquiry. Please try again.');
-      }
+      // Trigger user's default email provider with pre-filled To, Subject, and Body
+      window.location.href = mailto;
 
       setSubmitSuccess(true);
-      setSubmissionId(result.submissionId || null);
-      if (result.isSimulated) {
-        setIsSimulatedNote(true);
-      }
+      setSubmissionId(`oh_${Date.now().toString(36)}`);
 
       Analytics.inquirySubmitted(
         formData.businessName,
@@ -159,16 +213,29 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
     } catch (err: any) {
       console.error('Inquiry submission error:', err);
       setErrorMessage(
-        err.message || 'We encountered a connection issue submitting your inquiry. Please email rob@olelohonua.com directly.'
+        err.message || 'We encountered an issue preparing your email. Please email rob@olelohonua.com directly.'
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(preparedBodyText);
+      setCopiedToClipboard(true);
+      setTimeout(() => setCopiedToClipboard(false), 3000);
+    } catch (err) {
+      console.error('Clipboard copy failed:', err);
+    }
+  };
+
   const handleResetForm = () => {
     setSubmitSuccess(false);
     setSubmissionId(null);
+    setPreparedMailtoUrl('');
+    setPreparedBodyText('');
+    setCopiedToClipboard(false);
     setFormData({
       fullName: '',
       businessName: '',
@@ -230,36 +297,68 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
           </div>
         )}
 
-        {/* Success Confirmation Card */}
+        {/* Success Confirmation Card with Email Client Actions */}
         {submitSuccess ? (
-          <div className="bg-neutral-900 border border-emerald-500/50 rounded-xl p-8 sm:p-10 text-center shadow-2xl">
-            <div className="w-16 h-16 rounded-full bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-6">
-              <CheckCircle2 className="w-8 h-8" />
+          <div className="bg-neutral-900 border border-sky-500/50 rounded-xl p-8 sm:p-10 text-center shadow-2xl">
+            <div className="w-16 h-16 rounded-full bg-sky-950/60 border border-sky-500/40 text-sky-400 flex items-center justify-center mx-auto mb-6">
+              <Mail className="w-8 h-8" />
             </div>
             <h3 className="text-2xl font-bold text-white mb-3">
-              Got it. Your inquiry has been sent.
+              Opening Your Email Provider
             </h3>
             <p className="text-sm text-neutral-300 max-w-lg mx-auto leading-relaxed mb-6">
-              We&apos;ll review what you shared, look at your numbers, and get back to you within one business day with practical next steps.
+              Your default email app has been opened with your inquiry addressed to <strong className="text-white font-mono">rob@olelohonua.com</strong> with the subject and all details pre-filled.
             </p>
-            {submissionId && (
-              <div className="inline-block px-3 py-1 bg-neutral-950 rounded border border-neutral-800 text-xs font-mono text-neutral-400 mb-8">
-                Reference ID: {submissionId}
+
+            {/* Email Actions Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto mb-8">
+              <a
+                href={preparedMailtoUrl}
+                className="w-full sm:w-auto px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-neutral-950 bg-sky-400 hover:bg-sky-300 rounded-md transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>Open in Email App Again</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={handleCopyMessage}
+                className="w-full sm:w-auto px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-white bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {copiedToClipboard ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-300">Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 text-neutral-300" />
+                    <span>Copy Text (For Webmail)</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Message Preview Box */}
+            <div className="text-left bg-neutral-950 border border-neutral-800 rounded-lg p-5 max-w-xl mx-auto mb-8 font-mono text-xs text-neutral-300 max-h-56 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+              <div className="text-[11px] text-sky-400 font-sans font-semibold uppercase tracking-wider pb-2 mb-2 border-b border-neutral-800">
+                Pre-Filled Message Preview (To: rob@olelohonua.com)
               </div>
-            )}
+              {preparedBodyText}
+            </div>
 
             <div className="pt-6 border-t border-neutral-800 flex flex-col sm:flex-row items-center justify-center gap-4">
               <button
                 onClick={handleResetForm}
-                className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 rounded-md transition-colors"
+                className="px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-white bg-neutral-800/80 hover:bg-neutral-800 rounded-md transition-colors cursor-pointer"
               >
-                Submit Another Inquiry
+                Start Over
               </button>
               <a
                 href="mailto:rob@olelohonua.com"
                 className="text-xs text-sky-400 hover:text-sky-300 font-medium"
               >
-                Need immediate answers? Email rob@olelohonua.com
+                Direct Email: rob@olelohonua.com
               </a>
             </div>
           </div>
@@ -469,7 +568,7 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-neutral-800">
               <div className="flex items-center gap-2 text-xs text-neutral-400">
                 <Lock className="w-3.5 h-3.5 text-neutral-500" />
-                <span>Submissions route directly to Rob Brown (<span className="text-neutral-300">rob@olelohonua.com</span>). Never shared or spammed.</span>
+                <span>Opens your email app directly addressed to <span className="text-neutral-200 font-medium">rob@olelohonua.com</span>.</span>
               </div>
 
               <button
@@ -480,12 +579,12 @@ export const InquiryForm: React.FC<InquiryFormProps> = ({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Sending Inquiry...</span>
+                    <span>Preparing Email...</span>
                   </>
                 ) : (
                   <>
                     <span>Let&apos;s Find Your Savings</span>
-                    <Send className="w-4 h-4" />
+                    <Mail className="w-4 h-4" />
                   </>
                 )}
               </button>
